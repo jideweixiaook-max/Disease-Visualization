@@ -1,0 +1,1387 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>可视化修改疾病</title>
+    <style>
+        /* ===== 全局重置 & 基础 ===== */
+        * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; font-family:system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+        body { background:#f0f2f6; height:100vh; overflow:hidden; display:flex; flex-direction:column; }
+        .top-bar { display:flex; align-items:center; justify-content:space-between; padding:10px 16px; background:#fff; border-bottom:1px solid #e2e6ec; flex-shrink:0; z-index:10; }
+        .top-bar .back { font-size:22px; width:40px; height:40px; display:flex; align-items:center; justify-content:center; background:#f0f2f5; border-radius:50%; cursor:pointer; }
+        .top-bar .title { font-size:17px; font-weight:600; color:#0b1a2a; flex:1; margin-left:8px; }
+        .top-bar .actions { display:flex; gap:8px; }
+        .top-bar .actions button { border:none; padding:6px 14px; border-radius:20px; font-size:13px; font-weight:500; background:#f0f2f5; color:#1a2332; cursor:pointer; transition:all 0.2s; }
+        .top-bar .actions button.active { background:#2a7de1; color:#fff; }
+        .top-bar .actions button:active { transform:scale(0.94); }
+        .legend { display:flex; flex-wrap:wrap; gap:6px 16px; padding:6px 16px; background:#fff; border-bottom:1px solid #e9ecf0; font-size:12px; color:#3d4a5b; flex-shrink:0; overflow-x:auto; }
+        .legend-item { display:flex; align-items:center; gap:4px; white-space:nowrap; }
+        .legend-item .dot { width:14px; height:14px; border-radius:4px; border:1px solid rgba(0,0,0,0.08); }
+        .main-area { flex:1; display:flex; flex-direction:column; background:#ffffff; border-radius:24px 24px 0 0; margin-top:-8px; padding:8px 12px 0; box-shadow:0 -4px 20px rgba(0,0,0,0.04); overflow:hidden; position:relative; z-index:5; min-height:0; }
+
+        /* ===== 牙位图 ===== */
+        .tooth-grid-wrapper { flex-shrink:0; padding:4px 0 8px; position:relative; background:#fafbfc; border-radius:16px; margin-bottom:6px; }
+        .tooth-grid-wrapper::before { content:''; position:absolute; top:50%; left:0; right:0; height:0; border-top:2px dashed #c0c8d4; transform:translateY(-50%); z-index:1; pointer-events:none; }
+        .tooth-grid-wrapper::after { content:''; position:absolute; left:50%; top:0; bottom:0; width:0; border-left:2px dashed #c0c8d4; transform:translateX(-50%); z-index:1; pointer-events:none; }
+        .quadrant-grid { display:grid; grid-template-columns:1fr 1fr; grid-template-rows:1fr 1fr; gap:10px 8px; position:relative; z-index:2; min-height:180px; }
+        .quadrant { background:rgba(255,255,255,0.7); border-radius:12px; padding:4px 4px 4px 8px; backdrop-filter:blur(2px); }
+        .quadrant-label { font-size:12px; font-weight:700; color:#4a5a6a; letter-spacing:0.5px; margin-bottom:2px; padding-left:2px; }
+        .quadrant-teeth { display:grid; grid-template-columns:repeat(8,1fr); gap:3px; }
+        .tooth-item { aspect-ratio:1/1.15; border-radius:30% 30% 20% 20% / 50% 50% 20% 20%; display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:10px; font-weight:700; color:#1f2a3a; border:2px solid rgba(0,0,0,0.06); transition:all 0.15s ease; cursor:pointer; position:relative; background:#eef2f7; background-size:100% 100%; text-shadow:0 1px 2px rgba(255,255,255,0.5); touch-action:manipulation; min-width:0; min-height:0; }
+        .tooth-item .num { font-size:10px; font-weight:700; line-height:1.2; pointer-events:none; z-index:2; }
+        .tooth-item.selected { border-color:#2a7de1; box-shadow:0 0 0 3px rgba(42,125,225,0.25); transform:scale(1.04); z-index:3; }
+        .tooth-item.multi-selected { border-color:#f5a623; box-shadow:0 0 0 3px rgba(245,166,35,0.35); }
+        .tooth-item .badge-count { position:absolute; top:-4px; right:-4px; background:#ff3b30; color:#fff; border-radius:12px; padding:0 5px; font-size:8px; line-height:15px; min-width:15px; text-align:center; border:2px solid #fff; display:none; z-index:3; }
+        .tooth-item .badge-count.show { display:block; }
+        .tooth-item.pending { animation:pulse-border 1.2s infinite; }
+        @keyframes pulse-border { 0% { box-shadow:0 0 0 0 rgba(255,70,70,0.4); } 70% { box-shadow:0 0 0 6px rgba(255,70,70,0); } 100% { box-shadow:0 0 0 0 rgba(255,70,70,0); } }
+
+        /* ===== 疾病面板 ===== */
+        .disease-panel { flex:1; background:#fafbfc; border-top:1px solid #e9ecf0; padding:10px 14px 20px; overflow-y:auto; min-height:120px; border-radius:16px 16px 0 0; margin:0 -12px; padding-left:20px; padding-right:20px; padding-bottom:80px; }
+        .disease-panel .panel-placeholder { color:#8a9aaa; text-align:center; font-size:14px; padding:20px 0; }
+        .disease-panel .tooth-title { font-size:16px; font-weight:700; color:#0b1a2a; margin-bottom:8px; display:flex; align-items:center; justify-content:space-between; }
+        .disease-panel .tooth-title .add-btn { background:#2a7de1; color:#fff; border:none; padding:4px 16px; border-radius:20px; font-size:13px; font-weight:600; cursor:pointer; }
+        .disease-item { display:flex; align-items:center; gap:12px; background:#fff; padding:8px 14px; border-radius:12px; margin-bottom:6px; border-left:4px solid #ccc; box-shadow:0 1px 4px rgba(0,0,0,0.02); }
+        .disease-item .thumbnail { width:34px; height:34px; border-radius:6px; border:1px solid #e0e4ea; flex-shrink:0; position:relative; background:#f8f9fc; overflow:hidden; }
+        .disease-item .thumbnail svg { width:100%; height:100%; display:block; }
+        .disease-item .info { flex:1; }
+        .disease-item .info .name { font-weight:600; font-size:14px; }
+        .disease-item .info .detail { font-size:12px; color:#6a7a8a; }
+        .disease-item .actions { display:flex; gap:4px; }
+        .disease-item .actions button { border:none; background:#f0f2f5; padding:4px 10px; border-radius:16px; font-size:12px; cursor:pointer; transition:all 0.15s; font-weight:500; }
+        .disease-item .actions .edit-btn { background:#eef3fc; color:#2a7de1; }
+        .disease-item .actions .remove-btn { background:#ffe8e6; color:#ff3b30; }
+
+        /* ===== 新增表单 ===== */
+        .add-form { background:#fff; border-radius:16px; padding:14px; margin-top:8px; border:1px solid #e9ecf0; display:none; }
+        .add-form.open { display:block; }
+        .add-form .field { margin-bottom:10px; }
+        .add-form .field label { font-size:13px; font-weight:500; color:#3d4a5b; display:block; margin-bottom:3px; }
+        .add-form .field select { width:100%; padding:8px 12px; border-radius:12px; border:1px solid #d0d6de; font-size:14px; background:#fff; appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236a7a8a' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 12px center; }
+        .add-form .form-actions { display:flex; gap:10px; margin-top:12px; padding-bottom:4px; }
+        .add-form .form-actions button { flex:1; padding:10px; border-radius:14px; border:none; font-size:15px; font-weight:600; cursor:pointer; }
+        .add-form .form-actions .btn-confirm { background:#2a7de1; color:#fff; }
+        .add-form .form-actions .btn-cancel { background:#eef1f4; color:#3d4a5b; }
+
+        /* ===== 编辑表单（修改） ===== */
+        .edit-form { background:#fff; border-radius:12px; padding:12px; margin-top:6px; border:1px solid #e0e4ea; display:none; }
+        .edit-form.open { display:block; }
+        .edit-form .field { margin-bottom:8px; }
+        .edit-form .field label { font-size:12px; font-weight:500; color:#3d4a5b; display:block; margin-bottom:2px; }
+        .edit-form .field select { width:100%; padding:6px 10px; border-radius:10px; border:1px solid #d0d6de; font-size:13px; background:#fff; appearance:none; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%236a7a8a' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat:no-repeat; background-position:right 10px center; }
+        .edit-form .form-actions { display:flex; gap:8px; margin-top:12px; border-top:1px solid #eef1f4; padding-top:10px; }
+        .edit-form .form-actions button { flex:1; padding:8px; border-radius:12px; border:none; font-size:14px; font-weight:600; cursor:pointer; }
+        .edit-form .form-actions .btn-confirm-edit { background:#2a7de1; color:#fff; }
+        .edit-form .form-actions .btn-cancel-edit { background:#eef1f4; color:#3d4a5b; }
+
+        /* ===== 照片标注组件（新增+编辑共用） ===== */
+        .photo-annotation-area { display:flex; gap:12px; flex-wrap:wrap; margin-top:4px; }
+        .photo-display { flex:2; min-width:140px; aspect-ratio:4/3; background:#eef2f7; border-radius:12px; border:2px solid #d0d6de; position:relative; overflow:hidden; cursor:crosshair; touch-action:none; display:flex; align-items:center; justify-content:center; }
+        .photo-display .photo-placeholder { color:#8a9aaa; font-size:13px; font-weight:500; text-align:center; pointer-events:none; line-height:1.6; }
+        .photo-display .photo-placeholder .icon { font-size:32px; display:block; margin-bottom:4px; }
+        .selection-box { position:absolute; border:2.5px solid #2a7de1; background:rgba(42,125,225,0.2); display:none; cursor:move; touch-action:none; pointer-events:auto; }
+        .selection-box.locked { border-color:#34c759; background:rgba(52,199,89,0.2); }
+        .selection-box .resize-handle { position:absolute; width:12px; height:12px; background:#2a7de1; border:2px solid #fff; border-radius:50%; bottom:-6px; right:-6px; cursor:nwse-resize; touch-action:none; }
+        .photo-buttons { flex:1; min-width:100px; display:flex; flex-direction:column; gap:4px; }
+        .photo-buttons .photo-btn { padding:4px 8px; border-radius:8px; border:1.5px solid #d0d6de; background:#fff; font-size:11px; color:#2a3a4a; cursor:pointer; transition:all 0.15s; text-align:left; white-space:nowrap; position:relative; }
+        .photo-buttons .photo-btn.active { border-color:#2a7de1; background:#eef3fc; }
+        .photo-buttons .photo-btn .dot-badge { display:none; position:absolute; top:-4px; right:-4px; width:10px; height:10px; background:#2a7de1; border-radius:50%; border:1.5px solid #fff; }
+        .photo-buttons .photo-btn .dot-badge.show { display:block; }
+        .photo-actions { display:flex; gap:8px; margin-top:6px; flex-wrap:wrap; }
+        .photo-actions button { padding:4px 16px; border-radius:16px; border:none; font-size:12px; font-weight:600; cursor:pointer; transition:all 0.15s; }
+        .photo-actions .btn-reselect { background:#f0f2f5; color:#3d4a5b; display:none; }
+        .photo-actions .btn-confirm-photo { background:#2a7de1; color:#fff; display:none; }
+
+        /* 编辑表单中照片标注区域尺寸适应 */
+        .edit-form .photo-display { min-width:120px; aspect-ratio:4/3; }
+        .edit-form .photo-buttons { min-width:80px; }
+        .edit-form .photo-buttons .photo-btn { font-size:10px; padding:3px 6px; }
+
+        /* ===== 批量工具栏 ===== */
+        .batch-toolbar { position:fixed; bottom:0; left:0; right:0; background:#1a2a3a; padding:12px 20px 20px; border-radius:24px 24px 0 0; display:none; align-items:center; justify-content:space-between; z-index:50; transform:translateY(100%); transition:transform 0.3s; }
+        .batch-toolbar.open { transform:translateY(0); display:flex; }
+        .batch-toolbar .info { color:#fff; font-size:14px; }
+        .batch-toolbar .info strong { font-size:18px; }
+        .batch-toolbar .actions { display:flex; gap:10px; }
+        .batch-toolbar .actions button { padding:8px 16px; border-radius:20px; border:none; font-weight:600; font-size:14px; cursor:pointer; }
+        .batch-toolbar .actions .btn-batch-add { background:#f5a623; color:#1a2a3a; }
+        .batch-toolbar .actions .btn-batch-remove { background:#ff6b5a; color:#fff; }
+        .batch-toolbar .actions .btn-batch-cancel { background:#3a4a5a; color:#fff; }
+
+        /* ===== 待确认项悬浮按钮 ===== */
+        .cart-fab { position:fixed; bottom:24px; right:20px; width:60px; height:60px; border-radius:50%; background:#1a2a3a; box-shadow:0 6px 20px rgba(0,0,0,0.25); display:flex; align-items:center; justify-content:center; color:#fff; z-index:90; border:none; cursor:pointer; transition:transform 0.2s, background 0.2s; }
+        .cart-fab:active { transform:scale(0.88); background:#2a3a4a; }
+        .cart-fab svg { width:32px; height:32px; fill:none; stroke:#fff; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+        .cart-fab .badge { position:absolute; top:-4px; right:-4px; background:#ff3b30; color:#fff; border-radius:20px; padding:0 8px; font-size:13px; font-weight:700; line-height:22px; min-width:22px; text-align:center; border:2px solid #fff; display:none; }
+        .cart-fab .badge.show { display:block; }
+
+        /* ===== 待确认项抽屉 ===== */
+        .cart-drawer { position:fixed; bottom:0; left:0; right:0; background:#ffffff; border-radius:24px 24px 0 0; box-shadow:0 -8px 40px rgba(0,0,0,0.18); transform:translateY(100%); transition:transform 0.35s cubic-bezier(0.32,0.72,0,1); z-index:200; max-height:80vh; display:flex; flex-direction:column; }
+        .cart-drawer.open { transform:translateY(0); }
+        .drawer-header { display:flex; align-items:center; justify-content:space-between; padding:16px 20px 8px; border-bottom:1px solid #eef1f4; flex-shrink:0; }
+        .drawer-header h3 { font-size:18px; font-weight:700; display:flex; align-items:center; gap:8px; }
+        .drawer-header h3 svg { width:22px; height:22px; stroke:#1a2a3a; stroke-width:2; fill:none; stroke-linecap:round; stroke-linejoin:round; }
+        .drawer-header .close-drawer { width:36px; height:36px; border-radius:50%; background:#f0f2f5; border:none; font-size:20px; cursor:pointer; }
+        .drawer-body { flex:1; overflow-y:auto; padding:12px 20px 20px; }
+        .cart-item { display:flex; align-items:center; gap:12px; padding:10px 14px; background:#f8f9fc; border-radius:12px; margin-bottom:8px; border-left:4px solid #2a7de1; }
+        .cart-item .thumb { width:36px; height:36px; border-radius:8px; border:1px solid #e0e4ea; flex-shrink:0; background:#fff; overflow:hidden; display:flex; align-items:center; justify-content:center; }
+        .cart-item .thumb svg { width:100%; height:100%; display:block; }
+        .cart-item .info { flex:1; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+        .cart-item .info .tooth-label { font-weight:700; font-size:15px; color:#0b1a2a; }
+        .cart-item .info .action-tag { font-size:12px; font-weight:600; padding:2px 10px; border-radius:12px; background:#eef3fc; color:#2a7de1; }
+        .cart-item .info .action-tag.remove { background:#ffe8e6; color:#ff3b30; }
+        .cart-item .info .action-tag.modify { background:#fff3e0; color:#f5a623; }
+        .cart-item .info .disease-name { font-size:14px; font-weight:500; color:#1a2a3a; }
+        .cart-item .info .photo-name { font-size:12px; color:#8a9aaa; margin-left:4px; }
+        .cart-item .btn-undo { background:#ffe8e6; border:none; color:#ff3b30; font-weight:600; padding:4px 14px; border-radius:16px; cursor:pointer; flex-shrink:0; font-size:13px; transition:background 0.2s; }
+        .cart-item .btn-undo:active { background:#fdd0cc; }
+        .drawer-footer { padding:12px 20px 24px; border-top:1px solid #eef1f4; display:flex; gap:12px; flex-shrink:0; background:#fff; border-radius:0 0 24px 24px; }
+        .drawer-footer button { flex:1; padding:14px; border-radius:16px; border:none; font-size:16px; font-weight:600; cursor:pointer; transition:background 0.2s; }
+        .drawer-footer .btn-clear { background:#f0f2f5; color:#3d4a5b; }
+        .drawer-footer .btn-submit { background:#2a7de1; color:#fff; }
+
+        .overlay { position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.3); z-index:40; display:none; }
+        .overlay.show { display:block; }
+        .toast { position:fixed; top:80px; left:50%; transform:translateX(-50%); background:#1a2a3a; color:#fff; padding:10px 24px; border-radius:40px; font-size:14px; z-index:999; opacity:0; transition:opacity 0.3s; pointer-events:none; white-space:nowrap; box-shadow:0 4px 12px rgba(0,0,0,0.15); }
+        .toast.show { opacity:1; }
+
+        /* ===== 响应式 ===== */
+        @media (max-width:420px) {
+            .quadrant-teeth { gap:2px; }
+            .tooth-item .num { font-size:8px; }
+            .quadrant-label { font-size:10px; }
+            .photo-display { min-width:100px; }
+            .cart-item { flex-wrap:wrap; }
+            .cart-item .info { flex:1 1 100%; }
+        }
+        @media (min-width:600px) {
+            .quadrant-teeth { max-width:500px; margin:0 auto; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="toast" class="toast"></div>
+
+    <!-- 顶部栏 -->
+    <div class="top-bar">
+        <div class="back" id="backBtn">‹</div>
+        <div class="title">可视化修改疾病</div>
+        <div class="actions">
+            <button id="multiToggle">多选</button>
+        </div>
+    </div>
+
+    <!-- 图例 -->
+    <div class="legend">
+        <span class="legend-item"><span class="dot" style="background:#f9d56e;"></span>龋齿</span>
+        <span class="legend-item"><span class="dot" style="background:#f28b82;"></span>牙髓炎</span>
+        <span class="legend-item"><span class="dot" style="background:#7fc9f0;"></span>牙周炎</span>
+        <span class="legend-item"><span class="dot" style="background:#b39ddb;"></span>根尖炎</span>
+        <span class="legend-item"><span class="dot" style="background:#a8d5a2;"></span>阻生齿</span>
+    </div>
+
+    <!-- 主区域 -->
+    <div class="main-area">
+        <div class="tooth-grid-wrapper">
+            <div class="quadrant-grid" id="toothGridContainer"></div>
+        </div>
+        <div class="disease-panel" id="diseasePanel">
+            <div class="panel-placeholder">👆 请点击牙位图选择牙齿</div>
+        </div>
+    </div>
+
+    <!-- 批量工具栏 -->
+    <div class="batch-toolbar" id="batchToolbar">
+        <div class="info">已选 <strong id="batchCount">0</strong> 颗牙</div>
+        <div class="actions">
+            <button id="batchAddBtn" class="btn-batch-add">批量新增</button>
+            <button id="batchRemoveBtn" class="btn-batch-remove">批量移出</button>
+            <button id="batchCancelBtn" class="btn-batch-cancel">取消</button>
+        </div>
+    </div>
+
+    <!-- 待确认项按钮 -->
+    <button class="cart-fab" id="cartFab">
+        <svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M8 8h8"/><path d="M8 12h6"/><path d="M8 16h4"/></svg>
+        <span class="badge" id="cartBadge">0</span>
+    </button>
+
+    <!-- 待确认项抽屉 -->
+    <div class="cart-drawer" id="cartDrawer">
+        <div class="drawer-header">
+            <h3><svg viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M8 8h8"/><path d="M8 12h6"/><path d="M8 16h4"/></svg> 待确认项</h3>
+            <button class="close-drawer" id="closeDrawer">✕</button>
+        </div>
+        <div class="drawer-body" id="cartBody"></div>
+        <div class="drawer-footer">
+            <button class="btn-clear" id="clearCart">清空</button>
+            <button class="btn-submit" id="submitCart">提交全部</button>
+        </div>
+    </div>
+
+    <div class="overlay" id="overlay"></div>
+
+    <script>
+        // ============================================================
+        // 数据
+        // ============================================================
+        const DISEASE_NAMES = {
+            caries: '龋齿',
+            pulpitis: '牙髓炎',
+            periodontitis: '牙周炎',
+            periapical: '根尖炎',
+            impacted: '阻生齿'
+        };
+        const DISEASE_COLORS = {
+            caries: '#f9d56e',
+            pulpitis: '#f28b82',
+            periodontitis: '#7fc9f0',
+            periapical: '#b39ddb',
+            impacted: '#a8d5a2'
+        };
+        const PHOTO_NAMES = [
+            '自然咬合正视图','自然咬合左颊侧','自然咬合右颊侧',
+            '双颌微张正视图','双颌微张左颊侧','双颌微张右颊侧',
+            '张大嘴巴上颌面','张大嘴巴下颌面'
+        ];
+
+        function getToothDisplayNum(id) {
+            if (id >= 1 && id <= 8) return '' + id;
+            if (id >= 9 && id <= 16) return '' + (id - 8);
+            if (id >= 17 && id <= 24) return '' + (id - 16);
+            if (id >= 25 && id <= 32) return '' + (id - 24);
+            return '' + id;
+        }
+        function getToothFullLabel(id) {
+            if (id >= 1 && id <= 8) return 'A' + id;
+            if (id >= 9 && id <= 16) return 'B' + (id - 8);
+            if (id >= 17 && id <= 24) return 'D' + (id - 16);
+            if (id >= 25 && id <= 32) return 'C' + (id - 24);
+            return '' + id;
+        }
+
+        const QUADRANTS = [
+            { label: 'A区（右上）', teeth: [8,7,6,5,4,3,2,1] },
+            { label: 'B区（左上）', teeth: [9,10,11,12,13,14,15,16] },
+            { label: 'D区（左下）', teeth: [24,23,22,21,20,19,18,17] },
+            { label: 'C区（右下）', teeth: [25,26,27,28,29,30,31,32] }
+        ];
+
+        // 初始疾病数据 (含 photoIndex, photoName, boxData)
+        const initialDiseases = {
+            11: [{ id: 'd1', code: 'caries', name: '龋齿', photoIndex: 0, photoName: '自然咬合正视图', boxData: { x: 30, y: 35, w: 25, h: 20 } }],
+            16: [{ id: 'd2', code: 'periapical', name: '根尖炎', photoIndex: 4, photoName: '双颌微张左颊侧', boxData: { x: 40, y: 50, w: 20, h: 25 } }],
+            21: [{ id: 'd3', code: 'periodontitis', name: '牙周炎', photoIndex: 6, photoName: '张大嘴巴上颌面', boxData: { x: 25, y: 30, w: 30, h: 20 } }],
+            26: [{ id: 'd4', code: 'caries', name: '龋齿', photoIndex: 2, photoName: '自然咬合右颊侧', boxData: { x: 50, y: 40, w: 22, h: 18 } }],
+            31: [{ id: 'd5', code: 'impacted', name: '阻生齿', photoIndex: 5, photoName: '双颌微张右颊侧', boxData: { x: 35, y: 45, w: 20, h: 22 } }],
+            44: [{ id: 'd6', code: 'pulpitis', name: '牙髓炎', photoIndex: 1, photoName: '自然咬合左颊侧', boxData: { x: 45, y: 38, w: 18, h: 20 } }]
+        };
+
+        // ============================================================
+        // 状态管理
+        // ============================================================
+        let teeth = {};
+        let selectedTooth = null;
+        let multiSelectMode = false;
+        let multiSelected = new Set();
+        let cart = [];
+        let nextDiseaseId = 100;
+        let nextCartId = 1;
+        let hasFormData = false;
+        let editingDiseaseId = null;
+
+        // 新增表单状态
+        let addPhotoIndex = 0;
+        let addSelectionLocked = false;
+        let addSelectionData = null;
+        let addHasSelection = false;
+        let addBoxData = { x: 0, y: 0, w: 0, h: 0 };
+        let addIsDragging = false;
+        let addStartX = 0, addStartY = 0;
+
+        // 编辑表单状态 (每个编辑实例独立)
+        const editStates = {};
+
+        // DOM
+        const gridContainer = document.getElementById('toothGridContainer');
+        const diseasePanel = document.getElementById('diseasePanel');
+        const cartFab = document.getElementById('cartFab');
+        const cartBadge = document.getElementById('cartBadge');
+        const cartDrawer = document.getElementById('cartDrawer');
+        const cartBody = document.getElementById('cartBody');
+        const closeDrawer = document.getElementById('closeDrawer');
+        const clearCart = document.getElementById('clearCart');
+        const submitCart = document.getElementById('submitCart');
+        const overlay = document.getElementById('overlay');
+        const multiToggle = document.getElementById('multiToggle');
+        const batchToolbar = document.getElementById('batchToolbar');
+        const batchCount = document.getElementById('batchCount');
+        const batchAddBtn = document.getElementById('batchAddBtn');
+        const batchRemoveBtn = document.getElementById('batchRemoveBtn');
+        const batchCancelBtn = document.getElementById('batchCancelBtn');
+        const toastEl = document.getElementById('toast');
+        const backBtn = document.getElementById('backBtn');
+
+        // ============================================================
+        // 初始化
+        // ============================================================
+        function initData() {
+            teeth = {};
+            for (let i = 1; i <= 32; i++) {
+                teeth[i] = { diseases: [] };
+                if (initialDiseases[i]) {
+                    teeth[i].diseases = initialDiseases[i].map(d => ({
+                        ...d,
+                        id: d.id || 'd' + nextDiseaseId++,
+                        photoIndex: d.photoIndex || 0,
+                        photoName: d.photoName || PHOTO_NAMES[0],
+                        boxData: d.boxData || { x: 30, y: 30, w: 25, h: 20 }
+                    }));
+                }
+            }
+            let maxId = 0;
+            Object.values(teeth).forEach(t => t.diseases.forEach(d => {
+                const num = parseInt(d.id.replace('d', ''));
+                if (num > maxId) maxId = num;
+            }));
+            nextDiseaseId = maxId + 1;
+            cart = [];
+            nextCartId = 1;
+            selectedTooth = null;
+            multiSelected.clear();
+            multiSelectMode = false;
+            multiToggle.textContent = '多选';
+            multiToggle.classList.remove('active');
+            batchToolbar.classList.remove('open');
+            hasFormData = false;
+            editingDiseaseId = null;
+            resetAddAnnotation();
+            renderAll();
+            updateCartBadge();
+            showToast('点击牙位图选择牙齿');
+        }
+
+        // ============================================================
+        // 渲染
+        // ============================================================
+        function renderAll() {
+            renderToothGrid();
+            renderDiseasePanel();
+        }
+
+        function renderToothGrid() {
+            gridContainer.innerHTML = '';
+            QUADRANTS.forEach((quad) => {
+                const quadrantDiv = document.createElement('div');
+                quadrantDiv.className = 'quadrant';
+                const label = document.createElement('div');
+                label.className = 'quadrant-label';
+                label.textContent = quad.label;
+                quadrantDiv.appendChild(label);
+                const teethRow = document.createElement('div');
+                teethRow.className = 'quadrant-teeth';
+                quad.teeth.forEach((toothId) => {
+                    const div = document.createElement('div');
+                    div.className = 'tooth-item';
+                    div.dataset.tooth = toothId;
+                    const diseases = teeth[toothId].diseases;
+                    if (diseases.length > 0) {
+                        const colors = diseases.map(d => DISEASE_COLORS[d.code] || '#ccc');
+                        const total = diseases.length;
+                        const stops = colors.map((c, idx) => {
+                            const pos = (idx / total) * 100;
+                            const nextPos = ((idx + 1) / total) * 100;
+                            return `${c} ${pos}%, ${c} ${nextPos}%`;
+                        }).join(', ');
+                        div.style.background = `linear-gradient(to right, ${stops})`;
+                    } else {
+                        div.style.background = '#eef2f7';
+                    }
+                    const numSpan = document.createElement('span');
+                    numSpan.className = 'num';
+                    numSpan.textContent = getToothDisplayNum(toothId);
+                    div.appendChild(numSpan);
+                    const badge = document.createElement('span');
+                    badge.className = 'badge-count';
+                    if (diseases.length > 1) {
+                        badge.textContent = diseases.length;
+                        badge.classList.add('show');
+                    }
+                    div.appendChild(badge);
+                    if (selectedTooth === toothId) div.classList.add('selected');
+                    if (multiSelected.has(toothId)) div.classList.add('multi-selected');
+                    const hasPending = cart.some(item => item.toothId === toothId && item.action !== 'committed');
+                    if (hasPending) div.classList.add('pending');
+                    div.addEventListener('click', () => {
+                        if (multiSelectMode) toggleMultiSelect(toothId);
+                        else { selectedTooth = toothId; renderAll(); }
+                    });
+                    teethRow.appendChild(div);
+                });
+                quadrantDiv.appendChild(teethRow);
+                gridContainer.appendChild(quadrantDiv);
+            });
+        }
+
+        // 生成缩略图（根据框选坐标）
+        function generateThumbSvg(boxData) {
+            if (!boxData) return `<svg viewBox="0 0 100 100"><ellipse cx="50" cy="45" rx="30" ry="25" fill="#f0f0f0" stroke="#ccc" stroke-width="1.5"/><ellipse cx="50" cy="72" rx="20" ry="18" fill="#f0f0f0" stroke="#ccc" stroke-width="1.5"/><path d="M30 45 Q30 20 50 20 Q70 20 70 45" fill="#f0f0f0" stroke="#ccc" stroke-width="1.5"/></svg>`;
+            const { x, y, w, h } = boxData;
+            return `<svg viewBox="0 0 100 100"><ellipse cx="50" cy="45" rx="30" ry="25" fill="#f0f0f0" stroke="#ccc" stroke-width="1.5"/><ellipse cx="50" cy="72" rx="20" ry="18" fill="#f0f0f0" stroke="#ccc" stroke-width="1.5"/><path d="M30 45 Q30 20 50 20 Q70 20 70 45" fill="#f0f0f0" stroke="#ccc" stroke-width="1.5"/><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="rgba(255,60,60,0.3)" stroke="#ff3b30" stroke-width="2" rx="2"/></svg>`;
+        }
+
+        // ============================================================
+        // 疾病面板
+        // ============================================================
+        function renderDiseasePanel() {
+            if (!selectedTooth) {
+                diseasePanel.innerHTML = `<div class="panel-placeholder">👆 请点击牙位图选择牙齿</div>`;
+                return;
+            }
+            const tooth = teeth[selectedTooth];
+            if (!tooth) return;
+            const toothLabel = getToothFullLabel(selectedTooth);
+
+            let html = `<div class="tooth-title"><span>${toothLabel}</span><button class="add-btn" id="toggleAddForm">+ 新增</button></div>`;
+
+            if (tooth.diseases.length === 0) {
+                html += `<div style="color:#8a9aaa;padding:8px 0;font-size:14px;">暂无疾病诊断</div>`;
+            } else {
+                tooth.diseases.forEach(d => {
+                    const thumbSvg = generateThumbSvg(d.boxData);
+                    html += `
+                        <div class="disease-item" style="border-left-color: ${DISEASE_COLORS[d.code] || '#ccc'};">
+                            <div class="thumbnail">${thumbSvg}</div>
+                            <div class="info">
+                                <div class="name">${d.name}</div>
+                                <div class="detail">${d.photoName}</div>
+                            </div>
+                            <div class="actions">
+                                <button class="edit-btn" data-diseaseid="${d.id}">修改</button>
+                                <button class="remove-btn" data-diseaseid="${d.id}">移出</button>
+                            </div>
+                        </div>
+                        <div class="edit-form" id="editForm_${d.id}" data-diseaseid="${d.id}">
+                            <div class="field">
+                                <label>疾病类型</label>
+                                <select class="edit-disease-select" data-diseaseid="${d.id}">
+                                    ${Object.entries(DISEASE_NAMES).map(([code, name]) => `<option value="${code}" ${code===d.code?'selected':''}>${name}</option>`).join('')}
+                                </select>
+                            </div>
+                            <div class="field">
+                                <label>部位标注（选择照片并框选）</label>
+                                <div class="photo-annotation-area" data-editid="${d.id}">
+                                    <div class="photo-display edit-photo-display" data-editid="${d.id}">
+                                        <div class="photo-placeholder edit-placeholder" data-editid="${d.id}">
+                                            <span class="icon">🦷</span>
+                                            ${PHOTO_NAMES[d.photoIndex||0]}<br>
+                                            <span style="font-size:11px;color:#b0baca;">请点击疾病位置</span>
+                                        </div>
+                                        <div class="selection-box edit-selection-box" data-editid="${d.id}">
+                                            <div class="resize-handle"></div>
+                                        </div>
+                                    </div>
+                                    <div class="photo-buttons edit-photo-buttons" data-editid="${d.id}">
+                                        ${PHOTO_NAMES.map((name, idx) => `
+                                            <button class="photo-btn edit-photo-btn ${idx===(d.photoIndex||0)?'active':''}" data-index="${idx}" data-editid="${d.id}">
+                                                ${name}
+                                                <span class="dot-badge ${idx===(d.photoIndex||0)?'show':''}"></span>
+                                            </button>
+                                        `).join('')}
+                                    </div>
+                                </div>
+                                <div class="photo-actions edit-photo-actions" data-editid="${d.id}">
+                                    <button class="btn-reselect">重新选择</button>
+                                    <button class="btn-confirm-photo">确认</button>
+                                </div>
+                            </div>
+                            <div class="form-actions">
+                                <button class="btn-cancel-edit" data-diseaseid="${d.id}">取消</button>
+                                <button class="btn-confirm-edit" data-diseaseid="${d.id}">确认修改</button>
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            // 新增表单
+            html += `
+                <div class="add-form" id="addForm">
+                    <div class="field">
+                        <label>疾病类型</label>
+                        <select id="diseaseSelect">
+                            ${Object.entries(DISEASE_NAMES).map(([code, name]) => `<option value="${code}">${name}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="field">
+                        <label>部位标注（选择照片并框选）</label>
+                        <div class="photo-annotation-area" id="addAnnotationArea">
+                            <div class="photo-display" id="addPhotoDisplay">
+                                <div class="photo-placeholder" id="addPlaceholder">
+                                    <span class="icon">🦷</span>
+                                    ${PHOTO_NAMES[addPhotoIndex]}<br>
+                                    <span style="font-size:11px;color:#b0baca;">请点击疾病位置</span>
+                                </div>
+                                <div class="selection-box" id="addSelectionBox">
+                                    <div class="resize-handle"></div>
+                                </div>
+                            </div>
+                            <div class="photo-buttons" id="addPhotoButtons">
+                                ${PHOTO_NAMES.map((name, idx) => `
+                                    <button class="photo-btn ${idx===addPhotoIndex?'active':''}" data-index="${idx}" id="addPhotoBtn_${idx}">
+                                        ${name}
+                                        <span class="dot-badge"></span>
+                                    </button>
+                                `).join('')}
+                            </div>
+                        </div>
+                        <div class="photo-actions" id="addPhotoActions">
+                            <button class="btn-reselect" id="addReselect">重新选择</button>
+                            <button class="btn-confirm-photo" id="addConfirmPhoto">确认</button>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn-cancel" id="cancelAdd">取消</button>
+                        <button class="btn-confirm" id="confirmAdd">确认添加</button>
+                    </div>
+                </div>
+            `;
+            diseasePanel.innerHTML = html;
+
+            // ---- 新增表单事件 ----
+            const addBtn = document.getElementById('toggleAddForm');
+            const form = document.getElementById('addForm');
+            addBtn?.addEventListener('click', () => {
+                if (form) {
+                    form.classList.toggle('open');
+                    if (form.classList.contains('open')) {
+                        resetAddAnnotation();
+                        initAddPhotoEvents();
+                        setTimeout(() => diseasePanel.scrollTop = diseasePanel.scrollHeight, 100);
+                    }
+                }
+            });
+            document.getElementById('cancelAdd')?.addEventListener('click', () => { form?.classList.remove('open'); resetAddAnnotation(); });
+            document.getElementById('confirmAdd')?.addEventListener('click', (e) => { e.stopPropagation(); confirmAddDisease(); });
+
+            // ---- 编辑表单事件 ----
+            document.querySelectorAll('.edit-btn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const diseaseId = this.dataset.diseaseid;
+                    document.querySelectorAll('.edit-form').forEach(el => el.classList.remove('open'));
+                    const ef = document.getElementById('editForm_' + diseaseId);
+                    if (ef) {
+                        ef.classList.add('open');
+                        editingDiseaseId = diseaseId;
+                        initEditFormEvents(diseaseId);
+                        setTimeout(() => ef.scrollIntoView({ behavior: 'smooth', block: 'center' }), 100);
+                    }
+                });
+            });
+            document.querySelectorAll('.btn-cancel-edit').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const diseaseId = this.dataset.diseaseid;
+                    const ef = document.getElementById('editForm_' + diseaseId);
+                    if (ef) ef.classList.remove('open');
+                    editingDiseaseId = null;
+                });
+            });
+            document.querySelectorAll('.btn-confirm-edit').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const diseaseId = this.dataset.diseaseid;
+                    confirmEditDisease(diseaseId);
+                });
+            });
+
+            // ---- 移出功能 ----
+            document.querySelectorAll('.remove-btn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    const diseaseId = this.dataset.diseaseid;
+                    const disease = teeth[selectedTooth].diseases.find(d => d.id === diseaseId);
+                    if (!disease) return;
+                    if (confirm(`确认移出“${disease.name}”吗？`)) {
+                        const old = { ...disease };
+                        const idx = teeth[selectedTooth].diseases.indexOf(disease);
+                        if (idx > -1) {
+                            teeth[selectedTooth].diseases.splice(idx, 1);
+                            addToCart(selectedTooth, '移出', old, null);
+                            renderAll();
+                            updateCartBadge();
+                            showToast('已移出疾病');
+                        }
+                    }
+                });
+            });
+
+            // 初始化新增照片事件
+            initAddPhotoEvents();
+        }
+
+        // ============================================================
+        // 新增表单 - 照片框选
+        // ============================================================
+        function resetAddAnnotation() {
+            addSelectionLocked = false;
+            addSelectionData = null;
+            addHasSelection = false;
+            addBoxData = { x: 0, y: 0, w: 0, h: 0 };
+            addIsDragging = false;
+            const box = document.getElementById('addSelectionBox');
+            const placeholder = document.getElementById('addPlaceholder');
+            if (box) { box.style.display = 'none'; box.classList.remove('locked'); }
+            if (placeholder) placeholder.style.display = 'flex';
+            const reselect = document.getElementById('addReselect');
+            const confirmBtn = document.getElementById('addConfirmPhoto');
+            if (reselect) reselect.style.display = 'none';
+            if (confirmBtn) confirmBtn.style.display = 'none';
+            document.querySelectorAll('#addPhotoButtons .dot-badge').forEach(el => el.classList.remove('show'));
+        }
+
+        function initAddPhotoEvents() {
+            const display = document.getElementById('addPhotoDisplay');
+            const box = document.getElementById('addSelectionBox');
+            const placeholder = document.getElementById('addPlaceholder');
+            const reselect = document.getElementById('addReselect');
+            const confirmBtn = document.getElementById('addConfirmPhoto');
+
+            document.querySelectorAll('#addPhotoButtons .photo-btn').forEach(btn => {
+                btn.removeEventListener('click', addPhotoSwitchHandler);
+                btn.addEventListener('click', addPhotoSwitchHandler);
+            });
+            display.removeEventListener('mousedown', addStartDrag);
+            display.removeEventListener('mousemove', addMoveDrag);
+            display.removeEventListener('mouseup', addEndDrag);
+            display.removeEventListener('mouseleave', addEndDrag);
+            display.removeEventListener('touchstart', addStartDrag);
+            display.removeEventListener('touchmove', addMoveDrag);
+            display.removeEventListener('touchend', addEndDrag);
+            display.addEventListener('mousedown', addStartDrag);
+            display.addEventListener('mousemove', addMoveDrag);
+            display.addEventListener('mouseup', addEndDrag);
+            display.addEventListener('mouseleave', addEndDrag);
+            display.addEventListener('touchstart', addStartDrag, { passive: false });
+            display.addEventListener('touchmove', addMoveDrag, { passive: false });
+            display.addEventListener('touchend', addEndDrag, { passive: false });
+
+            reselect?.addEventListener('click', function() {
+                resetAddAnnotation();
+                document.querySelectorAll('#addPhotoButtons .dot-badge').forEach(el => el.classList.remove('show'));
+            });
+            confirmBtn?.addEventListener('click', function() {
+                if (!addHasSelection || !addSelectionData) { showToast('请先框选病灶位置'); return; }
+                addSelectionLocked = true;
+                box.classList.add('locked');
+                const activeBtn = document.querySelector('#addPhotoButtons .photo-btn.active');
+                if (activeBtn) {
+                    const dot = activeBtn.querySelector('.dot-badge');
+                    if (dot) dot.classList.add('show');
+                }
+                showToast('部位标注已确认');
+                hasFormData = true;
+            });
+        }
+
+        function addPhotoSwitchHandler(e) {
+            const idx = parseInt(this.dataset.index);
+            if (addHasSelection && !addSelectionLocked) {
+                if (!confirm('切换照片将丢失当前框选，是否继续？')) return;
+            }
+            addPhotoIndex = idx;
+            resetAddAnnotation();
+            const placeholder = document.getElementById('addPlaceholder');
+            if (placeholder) {
+                placeholder.innerHTML = `<span class="icon">🦷</span>${PHOTO_NAMES[idx]}<br><span style="font-size:11px;color:#b0baca;">请点击疾病位置</span>`;
+            }
+            document.querySelectorAll('#addPhotoButtons .photo-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            document.querySelectorAll('#addPhotoButtons .dot-badge').forEach(el => el.classList.remove('show'));
+        }
+
+        function addStartDrag(e) {
+            if (addSelectionLocked) return;
+            e.preventDefault();
+            const rect = document.getElementById('addPhotoDisplay').getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            addStartX = ((clientX - rect.left) / rect.width) * 100;
+            addStartY = ((clientY - rect.top) / rect.height) * 100;
+            addIsDragging = true;
+            addBoxData = { x: addStartX, y: addStartY, w: 0, h: 0 };
+            const box = document.getElementById('addSelectionBox');
+            const placeholder = document.getElementById('addPlaceholder');
+            if (box) box.style.display = 'block';
+            if (placeholder) placeholder.style.display = 'none';
+            addHasSelection = false;
+            const reselect = document.getElementById('addReselect');
+            const confirmBtn = document.getElementById('addConfirmPhoto');
+            if (reselect) reselect.style.display = 'none';
+            if (confirmBtn) confirmBtn.style.display = 'none';
+        }
+
+        function addMoveDrag(e) {
+            if (!addIsDragging || addSelectionLocked) return;
+            e.preventDefault();
+            const rect = document.getElementById('addPhotoDisplay').getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            let x = ((clientX - rect.left) / rect.width) * 100;
+            let y = ((clientY - rect.top) / rect.height) * 100;
+            let newX = Math.min(addStartX, x);
+            let newY = Math.min(addStartY, y);
+            let newW = Math.abs(x - addStartX);
+            let newH = Math.abs(y - addStartY);
+            if (newW < 3) newW = 3;
+            if (newH < 3) newH = 3;
+            if (newX + newW > 98) newW = 98 - newX;
+            if (newY + newH > 98) newH = 98 - newY;
+            if (newX < 2) newX = 2;
+            if (newY < 2) newY = 2;
+            addBoxData = { x: newX, y: newY, w: newW, h: newH };
+            const box = document.getElementById('addSelectionBox');
+            if (box) {
+                box.style.left = addBoxData.x + '%';
+                box.style.top = addBoxData.y + '%';
+                box.style.width = addBoxData.w + '%';
+                box.style.height = addBoxData.h + '%';
+            }
+        }
+
+        function addEndDrag(e) {
+            if (addIsDragging) {
+                addIsDragging = false;
+                if (addBoxData.w > 5 && addBoxData.h > 5) {
+                    addHasSelection = true;
+                    addSelectionData = { ...addBoxData };
+                    const reselect = document.getElementById('addReselect');
+                    const confirmBtn = document.getElementById('addConfirmPhoto');
+                    if (reselect) reselect.style.display = 'inline-block';
+                    if (confirmBtn) confirmBtn.style.display = 'inline-block';
+                } else {
+                    const box = document.getElementById('addSelectionBox');
+                    const placeholder = document.getElementById('addPlaceholder');
+                    if (box) box.style.display = 'none';
+                    if (placeholder) placeholder.style.display = 'flex';
+                }
+            }
+        }
+
+        // ============================================================
+        // 编辑表单 - 照片框选
+        // ============================================================
+        function initEditFormEvents(diseaseId) {
+            const editForm = document.getElementById('editForm_' + diseaseId);
+            if (!editForm) return;
+            const display = editForm.querySelector('.edit-photo-display');
+            const box = editForm.querySelector('.edit-selection-box');
+            const placeholder = editForm.querySelector('.edit-placeholder');
+            const btns = editForm.querySelectorAll('.edit-photo-btn');
+            const reselect = editForm.querySelector('.btn-reselect');
+            const confirmBtn = editForm.querySelector('.btn-confirm-photo');
+
+            if (!editStates[diseaseId]) {
+                const disease = teeth[selectedTooth].diseases.find(d => d.id === diseaseId);
+                editStates[diseaseId] = {
+                    photoIndex: disease ? disease.photoIndex || 0 : 0,
+                    selectionLocked: disease && disease.boxData ? true : false,
+                    selectionData: disease && disease.boxData ? { ...disease.boxData } : null,
+                    hasSelection: disease && disease.boxData ? true : false,
+                    boxData: disease && disease.boxData ? { ...disease.boxData } : { x: 30, y: 30, w: 25, h: 20 },
+                    isDragging: false,
+                    startX: 0, startY: 0
+                };
+                // 如果已有框选，显示
+                if (disease && disease.boxData) {
+                    const b = disease.boxData;
+                    if (box) {
+                        box.style.display = 'block';
+                        box.classList.add('locked');
+                        box.style.left = b.x + '%';
+                        box.style.top = b.y + '%';
+                        box.style.width = b.w + '%';
+                        box.style.height = b.h + '%';
+                    }
+                    if (placeholder) placeholder.style.display = 'none';
+                    if (reselect) reselect.style.display = 'inline-block';
+                    if (confirmBtn) confirmBtn.style.display = 'none';
+                    const activeBtn = editForm.querySelector(`.edit-photo-btn[data-index="${disease.photoIndex || 0}"]`);
+                    if (activeBtn) {
+                        const dot = activeBtn.querySelector('.dot-badge');
+                        if (dot) dot.classList.add('show');
+                    }
+                }
+            }
+
+            const state = editStates[diseaseId];
+
+            btns.forEach(btn => {
+                btn.removeEventListener('click', editPhotoSwitchHandler);
+                btn.addEventListener('click', editPhotoSwitchHandler);
+            });
+
+            function editPhotoSwitchHandler(e) {
+                const idx = parseInt(this.dataset.index);
+                if (state.hasSelection && !state.selectionLocked) {
+                    if (!confirm('切换照片将丢失当前框选，是否继续？')) return;
+                }
+                state.photoIndex = idx;
+                state.selectionLocked = false;
+                state.hasSelection = false;
+                state.selectionData = null;
+                state.boxData = { x: 0, y: 0, w: 0, h: 0 };
+                if (box) { box.style.display = 'none'; box.classList.remove('locked'); }
+                if (placeholder) {
+                    placeholder.style.display = 'flex';
+                    placeholder.innerHTML = `<span class="icon">🦷</span>${PHOTO_NAMES[idx]}<br><span style="font-size:11px;color:#b0baca;">请点击疾病位置</span>`;
+                }
+                if (reselect) reselect.style.display = 'none';
+                if (confirmBtn) confirmBtn.style.display = 'none';
+                btns.forEach(b => b.classList.remove('active'));
+                this.classList.add('active');
+                editForm.querySelectorAll('.dot-badge').forEach(el => el.classList.remove('show'));
+            }
+
+            display.removeEventListener('mousedown', editStartDrag);
+            display.removeEventListener('mousemove', editMoveDrag);
+            display.removeEventListener('mouseup', editEndDrag);
+            display.removeEventListener('mouseleave', editEndDrag);
+            display.removeEventListener('touchstart', editStartDrag);
+            display.removeEventListener('touchmove', editMoveDrag);
+            display.removeEventListener('touchend', editEndDrag);
+            display.addEventListener('mousedown', editStartDrag);
+            display.addEventListener('mousemove', editMoveDrag);
+            display.addEventListener('mouseup', editEndDrag);
+            display.addEventListener('mouseleave', editEndDrag);
+            display.addEventListener('touchstart', editStartDrag, { passive: false });
+            display.addEventListener('touchmove', editMoveDrag, { passive: false });
+            display.addEventListener('touchend', editEndDrag, { passive: false });
+
+            function editStartDrag(e) {
+                if (state.selectionLocked) return;
+                e.preventDefault();
+                const rect = display.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                state.startX = ((clientX - rect.left) / rect.width) * 100;
+                state.startY = ((clientY - rect.top) / rect.height) * 100;
+                state.isDragging = true;
+                state.boxData = { x: state.startX, y: state.startY, w: 0, h: 0 };
+                if (box) box.style.display = 'block';
+                if (placeholder) placeholder.style.display = 'none';
+                state.hasSelection = false;
+                if (reselect) reselect.style.display = 'none';
+                if (confirmBtn) confirmBtn.style.display = 'none';
+            }
+
+            function editMoveDrag(e) {
+                if (!state.isDragging || state.selectionLocked) return;
+                e.preventDefault();
+                const rect = display.getBoundingClientRect();
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                let x = ((clientX - rect.left) / rect.width) * 100;
+                let y = ((clientY - rect.top) / rect.height) * 100;
+                let newX = Math.min(state.startX, x);
+                let newY = Math.min(state.startY, y);
+                let newW = Math.abs(x - state.startX);
+                let newH = Math.abs(y - state.startY);
+                if (newW < 3) newW = 3;
+                if (newH < 3) newH = 3;
+                if (newX + newW > 98) newW = 98 - newX;
+                if (newY + newH > 98) newH = 98 - newY;
+                if (newX < 2) newX = 2;
+                if (newY < 2) newY = 2;
+                state.boxData = { x: newX, y: newY, w: newW, h: newH };
+                if (box) {
+                    box.style.left = state.boxData.x + '%';
+                    box.style.top = state.boxData.y + '%';
+                    box.style.width = state.boxData.w + '%';
+                    box.style.height = state.boxData.h + '%';
+                }
+            }
+
+            function editEndDrag(e) {
+                if (state.isDragging) {
+                    state.isDragging = false;
+                    if (state.boxData.w > 5 && state.boxData.h > 5) {
+                        state.hasSelection = true;
+                        state.selectionData = { ...state.boxData };
+                        if (reselect) reselect.style.display = 'inline-block';
+                        if (confirmBtn) confirmBtn.style.display = 'inline-block';
+                    } else {
+                        if (box) box.style.display = 'none';
+                        if (placeholder) placeholder.style.display = 'flex';
+                    }
+                }
+            }
+
+            reselect?.addEventListener('click', function() {
+                state.selectionLocked = false;
+                state.hasSelection = false;
+                state.selectionData = null;
+                state.boxData = { x: 0, y: 0, w: 0, h: 0 };
+                if (box) { box.style.display = 'none'; box.classList.remove('locked'); }
+                if (placeholder) placeholder.style.display = 'flex';
+                this.style.display = 'none';
+                if (confirmBtn) confirmBtn.style.display = 'none';
+                editForm.querySelectorAll('.dot-badge').forEach(el => el.classList.remove('show'));
+            });
+
+            confirmBtn?.addEventListener('click', function() {
+                if (!state.hasSelection || !state.selectionData) {
+                    showToast('请先框选病灶位置');
+                    return;
+                }
+                state.selectionLocked = true;
+                if (box) box.classList.add('locked');
+                const activeBtn = editForm.querySelector('.edit-photo-btn.active');
+                if (activeBtn) {
+                    const dot = activeBtn.querySelector('.dot-badge');
+                    if (dot) dot.classList.add('show');
+                }
+                showToast('部位标注已确认');
+            });
+        }
+
+        // ============================================================
+        // 新增疾病确认
+        // ============================================================
+        function confirmAddDisease() {
+            if (!selectedTooth) { showToast('请先选择牙齿'); return; }
+            const select = document.getElementById('diseaseSelect');
+            if (!select) return;
+            const code = select.value;
+            const name = DISEASE_NAMES[code];
+            if (!addSelectionLocked || !addSelectionData) {
+                showToast('请先在部位标注区框选并确认病灶位置');
+                return;
+            }
+            const tooth = teeth[selectedTooth];
+            const exist = tooth.diseases.some(d => d.code === code);
+            if (exist) {
+                if (!confirm(`该牙已存在“${name}”，是否继续添加？`)) return;
+            }
+            const newDisease = {
+                id: 'd' + nextDiseaseId++,
+                code, name,
+                photoIndex: addPhotoIndex,
+                photoName: PHOTO_NAMES[addPhotoIndex],
+                boxData: { ...addSelectionData }
+            };
+            tooth.diseases.push(newDisease);
+            addToCart(selectedTooth, '新增', null, { ...newDisease });
+            const form = document.getElementById('addForm');
+            if (form) form.classList.remove('open');
+            resetAddAnnotation();
+            hasFormData = true;
+            renderAll();
+            updateCartBadge();
+            showToast(`已新增 ${name}`);
+        }
+
+        // ============================================================
+        // 修改疾病确认
+        // ============================================================
+        function confirmEditDisease(diseaseId) {
+            const tooth = teeth[selectedTooth];
+            if (!tooth) return;
+            const disease = tooth.diseases.find(d => d.id === diseaseId);
+            if (!disease) return;
+            const editForm = document.getElementById('editForm_' + diseaseId);
+            if (!editForm) return;
+            const select = editForm.querySelector('.edit-disease-select');
+            if (!select) return;
+            const newCode = select.value;
+            const newName = DISEASE_NAMES[newCode];
+            const state = editStates[diseaseId];
+            if (!state || !state.selectionLocked || !state.selectionData) {
+                showToast('请先确认部位标注');
+                return;
+            }
+            const oldDisease = { ...disease };
+            const newDisease = {
+                ...disease,
+                code: newCode,
+                name: newName,
+                photoIndex: state.photoIndex || 0,
+                photoName: PHOTO_NAMES[state.photoIndex || 0],
+                boxData: { ...state.selectionData }
+            };
+            const idx = tooth.diseases.indexOf(disease);
+            if (idx > -1) {
+                tooth.diseases[idx] = newDisease;
+            }
+            addToCart(selectedTooth, '修改', oldDisease, newDisease);
+            editForm.classList.remove('open');
+            editingDiseaseId = null;
+            delete editStates[diseaseId];
+            renderAll();
+            updateCartBadge();
+            showToast('已修改疾病');
+        }
+
+        // ============================================================
+        // 待确认项
+        // ============================================================
+        function addToCart(toothId, action, oldDisease, newDisease) {
+            const id = nextCartId++;
+            cart.push({ id, toothId, action, oldDisease: oldDisease ? { ...oldDisease } : null, newDisease: newDisease ? { ...newDisease } : null, committed: false });
+            updateCartBadge();
+            if (cartDrawer.classList.contains('open')) renderCartDrawer();
+        }
+
+        function undoCartItem(cartId) {
+            const idx = cart.findIndex(item => item.id === cartId);
+            if (idx === -1) return;
+            const item = cart[idx];
+            if (item.action === '新增') {
+                const tooth = teeth[item.toothId];
+                if (tooth) {
+                    const d = tooth.diseases.find(d => d.id === item.newDisease.id);
+                    if (d) {
+                        const idx2 = tooth.diseases.indexOf(d);
+                        if (idx2 > -1) tooth.diseases.splice(idx2, 1);
+                    }
+                }
+            } else if (item.action === '修改') {
+                const tooth = teeth[item.toothId];
+                if (tooth) {
+                    const d = tooth.diseases.find(d => d.id === item.oldDisease.id);
+                    if (d) {
+                        Object.assign(d, item.oldDisease);
+                    }
+                }
+            } else if (item.action === '移出') {
+                const tooth = teeth[item.toothId];
+                if (tooth) {
+                    tooth.diseases.push({ ...item.oldDisease });
+                }
+            }
+            cart.splice(idx, 1);
+            renderAll();
+            updateCartBadge();
+            if (cartDrawer.classList.contains('open')) renderCartDrawer();
+            showToast('已撤销');
+        }
+
+        // ---- 清空：二次确认，回滚所有未提交修改 ----
+        function clearAllCart() {
+            if (cart.length === 0) {
+                showToast('没有待确认项');
+                return;
+            }
+            if (!confirm('确认清空所有待确认项吗？清空后修改将回滚。')) return;
+
+            // 回滚所有未提交的修改
+            const pending = cart.filter(item => item.action !== 'committed');
+            pending.forEach(item => {
+                if (item.action === '新增') {
+                    const tooth = teeth[item.toothId];
+                    if (tooth) {
+                        const d = tooth.diseases.find(d => d.id === item.newDisease.id);
+                        if (d) {
+                            const idx2 = tooth.diseases.indexOf(d);
+                            if (idx2 > -1) tooth.diseases.splice(idx2, 1);
+                        }
+                    }
+                } else if (item.action === '修改') {
+                    const tooth = teeth[item.toothId];
+                    if (tooth) {
+                        const d = tooth.diseases.find(d => d.id === item.oldDisease.id);
+                        if (d) {
+                            Object.assign(d, item.oldDisease);
+                        }
+                    }
+                } else if (item.action === '移出') {
+                    const tooth = teeth[item.toothId];
+                    if (tooth) {
+                        tooth.diseases.push({ ...item.oldDisease });
+                    }
+                }
+            });
+
+            cart = [];
+            renderAll();
+            updateCartBadge();
+            // 关闭抽屉
+            if (cartDrawer.classList.contains('open')) {
+                cartDrawer.classList.remove('open');
+                overlay.classList.remove('show');
+            }
+            showToast('已清空所有待确认项');
+        }
+
+        // ---- 提交全部：二次确认，提交所有修改 ----
+        function submitAllChanges() {
+            const pending = cart.filter(item => item.action !== 'committed');
+            if (pending.length === 0) {
+                showToast('没有待提交的修改');
+                return;
+            }
+            if (!confirm(`确认提交 ${pending.length} 项修改吗？提交后将无法撤回。`)) return;
+
+            // 标记为已提交
+            pending.forEach(item => item.committed = true);
+            // 清空已提交项（即清空整个cart，因为全部已提交）
+            cart = [];
+            showToast(`成功提交 ${pending.length} 项修改`);
+
+            renderAll();
+            updateCartBadge();
+            // 关闭抽屉
+            if (cartDrawer.classList.contains('open')) {
+                cartDrawer.classList.remove('open');
+                overlay.classList.remove('show');
+            }
+            // 取消所有牙齿的待确认状态（由render自动处理）
+            selectedTooth = null;
+            renderDiseasePanel();
+            renderToothGrid();
+        }
+
+        function updateCartBadge() {
+            const count = cart.filter(item => item.action !== 'committed').length;
+            cartBadge.textContent = count;
+            cartBadge.classList.toggle('show', count > 0);
+        }
+
+        function generateCartThumbSvg(boxData) {
+            if (!boxData) return `<svg viewBox="0 0 100 100"><ellipse cx="50" cy="45" rx="30" ry="25" fill="#f0f0f0" stroke="#ccc" stroke-width="1.5"/><ellipse cx="50" cy="72" rx="20" ry="18" fill="#f0f0f0" stroke="#ccc" stroke-width="1.5"/><path d="M30 45 Q30 20 50 20 Q70 20 70 45" fill="#f0f0f0" stroke="#ccc" stroke-width="1.5"/></svg>`;
+            const { x, y, w, h } = boxData;
+            return `<svg viewBox="0 0 100 100"><ellipse cx="50" cy="45" rx="30" ry="25" fill="#f0f0f0" stroke="#ccc" stroke-width="1.5"/><ellipse cx="50" cy="72" rx="20" ry="18" fill="#f0f0f0" stroke="#ccc" stroke-width="1.5"/><path d="M30 45 Q30 20 50 20 Q70 20 70 45" fill="#f0f0f0" stroke="#ccc" stroke-width="1.5"/><rect x="${x}" y="${y}" width="${w}" height="${h}" fill="rgba(255,60,60,0.3)" stroke="#ff3b30" stroke-width="2" rx="2"/></svg>`;
+        }
+
+        function renderCartDrawer() {
+            cartBody.innerHTML = '';
+            const items = cart.filter(item => item.action !== 'committed');
+            if (items.length === 0) {
+                cartBody.innerHTML = '<div style="text-align:center;color:#8a9aaa;padding:40px 0;">暂无待确认项</div>';
+                return;
+            }
+            items.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'cart-item';
+                const fullLabel = getToothFullLabel(item.toothId);
+                let diseaseName = '', photoName = '', boxData = null, changeDetail = '';
+                if (item.action === '新增') {
+                    diseaseName = item.newDisease.name;
+                    photoName = item.newDisease.photoName || '';
+                    boxData = item.newDisease.boxData || null;
+                } else if (item.action === '修改') {
+                    diseaseName = item.newDisease.name;
+                    photoName = item.newDisease.photoName || '';
+                    boxData = item.newDisease.boxData || null;
+                    const oldName = item.oldDisease.name;
+                    const oldPhoto = item.oldDisease.photoName || '';
+                    if (oldName !== item.newDisease.name) changeDetail = ` ${oldName} → ${item.newDisease.name}`;
+                    else if (oldPhoto !== photoName) changeDetail = ` 部位变更`;
+                    else changeDetail = ` 已修改`;
+                } else if (item.action === '移出') {
+                    diseaseName = item.oldDisease.name;
+                    photoName = item.oldDisease.photoName || '';
+                    boxData = item.oldDisease.boxData || null;
+                }
+                const thumbSvg = generateCartThumbSvg(boxData);
+                const actionLabel = item.action;
+                let actionClass = actionLabel === '修改' ? 'modify' : (actionLabel === '移出' ? 'remove' : '');
+                div.innerHTML = `
+                    <div class="thumb">${thumbSvg}</div>
+                    <div class="info">
+                        <span class="tooth-label">${fullLabel}</span>
+                        <span class="action-tag ${actionClass}">${actionLabel}</span>
+                        <span class="disease-name">${diseaseName}</span>
+                        ${photoName ? `<span class="photo-name">${photoName}</span>` : ''}
+                        ${changeDetail ? `<span class="change-detail">${changeDetail}</span>` : ''}
+                    </div>
+                    <button class="btn-undo" data-cartid="${item.id}">撤销</button>
+                `;
+                cartBody.appendChild(div);
+            });
+            document.querySelectorAll('.btn-undo').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const id = parseInt(btn.dataset.cartid);
+                    undoCartItem(id);
+                });
+            });
+        }
+
+        // ============================================================
+        // 批量操作
+        // ============================================================
+        function toggleMultiSelect(toothId) {
+            if (multiSelected.has(toothId)) multiSelected.delete(toothId);
+            else multiSelected.add(toothId);
+            batchCount.textContent = multiSelected.size;
+            renderToothGrid();
+            if (multiSelected.size > 0) {
+                batchToolbar.classList.add('open');
+                diseasePanel.style.paddingBottom = '120px';
+            } else {
+                batchToolbar.classList.remove('open');
+                diseasePanel.style.paddingBottom = '80px';
+            }
+        }
+
+        function exitMultiSelect() {
+            multiSelectMode = false;
+            multiSelected.clear();
+            multiToggle.textContent = '多选';
+            multiToggle.classList.remove('active');
+            batchToolbar.classList.remove('open');
+            diseasePanel.style.paddingBottom = '80px';
+            renderToothGrid();
+        }
+
+        multiToggle.addEventListener('click', () => {
+            multiSelectMode = !multiSelectMode;
+            multiToggle.textContent = multiSelectMode ? '取消多选' : '多选';
+            multiToggle.classList.toggle('active', multiSelectMode);
+            if (!multiSelectMode) exitMultiSelect();
+            else {
+                multiSelected.clear();
+                batchToolbar.classList.remove('open');
+                diseasePanel.style.paddingBottom = '80px';
+                renderToothGrid();
+            }
+        });
+
+        batchCancelBtn.addEventListener('click', exitMultiSelect);
+
+        batchAddBtn.addEventListener('click', function() {
+            if (multiSelected.size === 0) { showToast('请先选择牙齿'); return; }
+            if (!hasFormData || !addSelectionLocked || !addSelectionData) {
+                showToast('请先新增一个牙齿疾病');
+                if (selectedTooth) {
+                    renderDiseasePanel();
+                    const form = document.getElementById('addForm');
+                    if (form) {
+                        form.classList.add('open');
+                        resetAddAnnotation();
+                        initAddPhotoEvents();
+                        setTimeout(() => diseasePanel.scrollTop = diseasePanel.scrollHeight, 100);
+                    }
+                } else {
+                    const firstTooth = Object.keys(teeth).find(id => teeth[id].diseases.length > 0) || 11;
+                    selectedTooth = parseInt(firstTooth);
+                    renderAll();
+                    const form = document.getElementById('addForm');
+                    if (form) {
+                        form.classList.add('open');
+                        resetAddAnnotation();
+                        initAddPhotoEvents();
+                        setTimeout(() => diseasePanel.scrollTop = diseasePanel.scrollHeight, 100);
+                    }
+                }
+                return;
+            }
+            const select = document.getElementById('diseaseSelect');
+            const code = select ? select.value : 'caries';
+            const name = DISEASE_NAMES[code];
+            const siteData = {
+                photoIndex: addPhotoIndex,
+                photoName: PHOTO_NAMES[addPhotoIndex],
+                boxData: { ...addSelectionData }
+            };
+            let added = 0, skipped = 0;
+            multiSelected.forEach(toothId => {
+                const tooth = teeth[toothId];
+                if (!tooth) return;
+                const exist = tooth.diseases.some(d => d.code === code);
+                if (exist) { skipped++; return; }
+                const newDisease = {
+                    id: 'd' + nextDiseaseId++,
+                    code, name,
+                    photoIndex: siteData.photoIndex,
+                    photoName: siteData.photoName,
+                    boxData: { ...siteData.boxData }
+                };
+                tooth.diseases.push(newDisease);
+                addToCart(toothId, '新增', null, { ...newDisease });
+                added++;
+            });
+            if (added > 0) {
+                showToast(`批量新增 ${added} 颗牙的 ${name}${skipped > 0 ? `，${skipped} 颗已跳过` : ''}`);
+                renderAll();
+                updateCartBadge();
+                exitMultiSelect();
+            } else {
+                showToast(`所有选中牙齿均已存在该疾病`);
+                renderAll();
+                updateCartBadge();
+                exitMultiSelect();
+            }
+        });
+
+        batchRemoveBtn.addEventListener('click', function() {
+            if (multiSelected.size === 0) { showToast('请先选择牙齿'); return; }
+            let removed = 0;
+            multiSelected.forEach(toothId => {
+                const tooth = teeth[toothId];
+                if (!tooth || tooth.diseases.length === 0) return;
+                const d = tooth.diseases[0];
+                const old = { ...d };
+                tooth.diseases.splice(0, 1);
+                addToCart(toothId, '移出', old, null);
+                removed++;
+            });
+            if (removed > 0) {
+                showToast(`批量移出 ${removed} 个疾病`);
+                renderAll();
+                updateCartBadge();
+                exitMultiSelect();
+            } else {
+                showToast('没有可移出的疾病');
+            }
+        });
+
+        // ============================================================
+        // Toast & 其他事件
+        // ============================================================
+        let toastTimer = null;
+        function showToast(msg) {
+            toastEl.textContent = msg;
+            toastEl.classList.add('show');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => toastEl.classList.remove('show'), 3000);
+        }
+
+        cartFab.addEventListener('click', () => {
+            if (cartDrawer.classList.contains('open')) {
+                cartDrawer.classList.remove('open');
+                overlay.classList.remove('show');
+            } else {
+                renderCartDrawer();
+                cartDrawer.classList.add('open');
+                overlay.classList.add('show');
+            }
+        });
+        closeDrawer.addEventListener('click', () => {
+            cartDrawer.classList.remove('open');
+            overlay.classList.remove('show');
+        });
+        overlay.addEventListener('click', function() {
+            if (cartDrawer.classList.contains('open')) {
+                cartDrawer.classList.remove('open');
+                overlay.classList.remove('show');
+            }
+        });
+        // 绑定清空和提交按钮（已在HTML中指定id）
+        clearCart.addEventListener('click', clearAllCart);
+        submitCart.addEventListener('click', submitAllChanges);
+        backBtn.addEventListener('click', () => {
+            if (cart.length > 0 && !confirm('有未提交修改，确定退出吗？')) return;
+            showToast('返回报告列表（模拟）');
+        });
+
+        // ============================================================
+        // 启动
+        // ============================================================
+        initData();
+    </script>
+</body>
+</html>
