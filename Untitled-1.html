@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>晚安朋友 - Good Night Buddy</title>
+    <style>
+        :root {
+            --bg-gradient: linear-gradient(180deg, #0b0e14 0%, #121824 60%, #0a0d16 100%);
+            --accent-warm: #f3e5c8;
+            --accent-glow: rgba(243, 229, 200, 0.2);
+            --card-bg: rgba(255, 255, 255, 0.04);
+            --border-line: rgba(255, 255, 255, 0.08);
+            --text-primary: #f0f6fc;
+            --text-secondary: #8b949e;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background: #0b0e14;
+            color: var(--text-primary);
+        }
+
+        #app {
+            width: 100%;
+            height: 100%;
+            background: var(--bg-gradient);
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        /* 视图系统 */
+        .view {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            padding: calc(24px + env(safe-area-inset-top)) 24px calc(36px + env(safe-area-inset-bottom));
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.6s ease;
+            z-index: 1;
+        }
+
+        .view.active {
+            opacity: 1;
+            pointer-events: auto;
+            z-index: 2;
+        }
+
+        /* 页头日期 */
+        .header-date {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            letter-spacing: 1.5px;
+            margin-top: 10px;
+        }
+
+        /* AI 头像与动画 */
+        .avatar-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: auto 0;
+        }
+
+        .avatar-glow {
+            width: 150px;
+            height: 150px;
+            border-radius: 50%;
+            background: radial-gradient(circle, var(--accent-glow) 0%, rgba(0, 0, 0, 0) 70%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            transition: all 0.5s ease;
+            animation: breathe 5s ease-in-out infinite;
+        }
+
+        .avatar-core {
+            width: 96px;
+            height: 96px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #f3e5c8 0%, #cbb17b 100%);
+            box-shadow: 0 0 30px var(--accent-glow);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.2rem;
+            cursor: pointer;
+        }
+
+        /* 状态说明 */
+        .status-text {
+            margin-top: 28px;
+            font-size: 1.05rem;
+            color: var(--accent-warm);
+            letter-spacing: 0.5px;
+            text-align: center;
+            font-weight: 300;
+        }
+
+        .sub-status {
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            margin-top: 8px;
+            text-align: center;
+            max-width: 280px;
+            line-height: 1.4;
+        }
+
+        /* 按钮与交互元素 */
+        .btn-primary {
+            width: 100%;
+            max-width: 320px;
+            padding: 16px 0;
+            border-radius: 30px;
+            border: none;
+            background: linear-gradient(90deg, #f3e5c8 0%, #dec28e 100%);
+            color: #16120b;
+            font-size: 0.98rem;
+            font-weight: 600;
+            letter-spacing: 1px;
+            cursor: pointer;
+            box-shadow: 0 8px 25px rgba(243, 229, 200, 0.12);
+            transition: all 0.2s;
+        }
+
+        .btn-primary:active {
+            transform: scale(0.97);
+        }
+
+        .btn-secondary {
+            background: transparent;
+            border: 1px solid var(--border-line);
+            color: var(--text-secondary);
+            margin-top: 12px;
+            box-shadow: none;
+        }
+
+        /* 心事卡片 */
+        .summary-card {
+            width: 100%;
+            max-width: 340px;
+            background: var(--card-bg);
+            border: 1px solid var(--border-line);
+            border-radius: 20px;
+            padding: 24px;
+            backdrop-filter: blur(12px);
+            margin: auto 0;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+        }
+
+        .summary-card h3 {
+            font-size: 1.1rem;
+            color: var(--accent-warm);
+            margin-bottom: 18px;
+            border-bottom: 1px solid var(--border-line);
+            padding-bottom: 12px;
+            text-align: center;
+            font-weight: 400;
+            letter-spacing: 1px;
+        }
+
+        .summary-section {
+            margin-bottom: 16px;
+        }
+
+        .summary-section h4 {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+            letter-spacing: 0.5px;
+        }
+
+        .summary-section p {
+            font-size: 0.92rem;
+            line-height: 1.6;
+            color: var(--text-primary);
+            font-weight: 300;
+        }
+
+        /* 设置 Modal */
+        .config-btn {
+            position: absolute;
+            top: calc(20px + env(safe-area-inset-top));
+            right: 20px;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 1.2rem;
+            z-index: 10;
+            cursor: pointer;
+        }
+
+        .modal {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 100;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s;
+        }
+
+        .modal.active { opacity: 1; pointer-events: auto; }
+
+        .modal-content {
+            width: 85%;
+            max-width: 320px;
+            background: #161c28;
+            border: 1px solid var(--border-line);
+            border-radius: 16px;
+            padding: 20px;
+        }
+
+        .modal-content h4 { margin-bottom: 12px; font-size: 1rem; color: var(--accent-warm); }
+        .modal-content input {
+            width: 100%;
+            padding: 10px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--border-line);
+            border-radius: 8px;
+            color: #fff;
+            margin-bottom: 15px;
+            outline: none;
+        }
+
+        /* 呼吸与讲话动画 */
+        @keyframes breathe {
+            0%, 100% { transform: scale(1); opacity: 0.5; }
+            50% { transform: scale(1.12); opacity: 0.8; }
+        }
+
+        .speaking {
+            animation: pulse-speak 1.2s infinite ease-in-out !important;
+        }
+
+        @keyframes pulse-speak {
+            0% { transform: scale(1); box-shadow: 0 0 20px var(--accent-glow); }
+            50% { transform: scale(1.18); box-shadow: 0 0 45px rgba(243, 229, 200, 0.5); }
+            100% { transform: scale(1); box-shadow: 0 0 20px var(--accent-glow); }
+        }
+    </style>
+</head>
+<body>
+
+<div id="app">
+    <button class="config-btn" onclick="toggleConfigModal(true)">⚙️</button>
+
+    <!-- 1. 首页 -->
+    <div id="view-home" class="view active">
+        <div class="header-date" id="current-date">--月--日 星期-</div>
+        
+        <div class="avatar-container">
+            <div class="avatar-glow">
+                <div class="avatar-core">🌙</div>
+            </div>
+            <div class="status-text">晚安，朋友</div>
+            <div class="sub-status">等你好久了，今晚想聊聊什么？</div>
+        </div>
+
+        <button class="btn-primary" onclick="switchView('view-chat')">开始今晚聊天</button>
+    </div>
+
+    <!-- 2. 语音聊天页 -->
+    <div id="view-chat" class="view">
+        <div class="header-date">倾听中 · 晚安朋友</div>
+
+        <div class="avatar-container">
+            <div id="chat-avatar-glow" class="avatar-glow">
+                <div class="avatar-core" id="avatar-icon">✨</div>
+            </div>
+            <div class="status-text" id="chat-status">正在连接...</div>
+            <div class="sub-status" id="chat-substatus">你可以随时开口讲话</div>
+        </div>
+
+        <div style="width: 100%; display: flex; flex-direction: column; align-items: center;">
+            <button class="btn-primary btn-secondary" onclick="finishChatSession()">结束今晚聊天</button>
+        </div>
+    </div>
+
+    <!-- 3. 心事总结页 -->
+    <div id="view-summary" class="view">
+        <div class="header-date">《今晚的心事》</div>
+
+        <div class="summary-card">
+            <h3>🌙 晚安留言</h3>
+            <div class="summary-section">
+                <h4>今天发生了什么</h4>
+                <p id="summary-events">正在梳理今晚的对话...</p>
+            </div>
+            <div class="summary-section">
+                <h4>你在意的事情</h4>
+                <p id="summary-focus">...</p>
+            </div>
+            <div class="summary-section">
+                <h4>明天的小提醒</h4>
+                <p id="summary-reminder">...</p>
+            </div>
+        </div>
+
+        <button class="btn-primary" onclick="switchView('view-home')">晚安，好梦</button>
+    </div>
+</div>
+
+<!-- Key 设置弹窗 -->
+<div class="modal" id="config-modal">
+    <div class="modal-content">
+        <h4>设置 API Key</h4>
+        <p style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:10px;">预留 API 接口，若无 Key 将使用智能模拟语音流体验 MVP 流程。</p>
+        <input type="password" id="api-key-input" placeholder="输入 Open AI / 大模型 Key">
+        <button class="btn-primary" style="padding: 10px 0;" onclick="saveConfig()">保存设置</button>
+    </div>
+</div>
+
+<script>
+    // --- 架构与状态控制 ---
+    const SYSTEM_PROMPT = `你叫“晚安朋友”，是用户温柔、有耐心的睡前AI朋友。
+规则：
+1. 像多年的老朋友一样交流，语言温柔、短小、亲切。
+2. 绝对不主动说教，不输出鸡汤，不做心理学教条分析。
+3. 先倾听，回应情绪，再自然追问细节。
+4. 结合【长期记忆】中的信息自然关怀用户。`;
+
+    let state = {
+        apiKey: localStorage.getItem('gnb_api_key') || '',
+        memory: JSON.parse(localStorage.getItem('gnb_user_memory') || '[]'),
+        chatHistory: [],
+        recognition: null,
+        isListening: false,
+        isSpeaking: false,
+        sleepTimer: null,
+        maxChatDuration: 60 * 60 * 1000 // 60分钟睡眠检测
+    };
+
+    // --- 初始化 ---
+    function init() {
+        initDate();
+        initSpeechRecognition();
+    }
+
+    function initDate() {
+        const now = new Date();
+        const options = { month: 'long', day: 'numeric', weekday: 'long' };
+        document.getElementById('current-date').innerText = now.toLocaleDateString('zh-CN', options);
+    }
+
+    function toggleConfigModal(show) {
+        document.getElementById('config-modal').classList.toggle('active', show);
+        if(show) document.getElementById('api-key-input').value = state.apiKey;
+    }
+
+    function saveConfig() {
+        state.apiKey = document.getElementById('api-key-input').value.trim();
+        localStorage.setItem('gnb_api_key', state.apiKey);
+        toggleConfigModal(false);
+    }
+
+    // --- 页面视图切换 ---
+    function switchView(viewId) {
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById(viewId).classList.add('active');
+        
+        if (viewId === 'view-chat') {
+            startChatSession();
+        } else if (viewId === 'view-home') {
+            stopAudioProcesses();
+        }
+    }
+
+    // --- 语音识别 (STT) 与 交互 ---
+    function initSpeechRecognition() {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (SpeechRecognition) {
+            state.recognition = new SpeechRecognition();
+            state.recognition.continuous = true;
+            state.recognition.interimResults = true;
+            state.recognition.lang = 'zh-CN';
+
+            state.recognition.onresult = (event) => {
+                let interimTranscript = '';
+                let finalTranscript = '';
+
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript;
+                    } else {
+                        interimTranscript += event.results[i][0].transcript;
+                    }
+                }
+
+                if (interimTranscript.length > 0 && state.isSpeaking) {
+                    // 打断机制：用户开口讲话时，打断 AI 语音输出
+                    stopTTS();
+                }
+
+                if (finalTranscript.trim().length > 0) {
+                    handleUserInput(finalTranscript.trim());
+                }
+            };
+
+            state.recognition.onerror = () => {
+                updateChatStatus("倾听中...", "你可以随时开口讲话");
+            };
+        }
+    }
+
+    // --- 核心聊天流程 ---
+    function startChatSession() {
+        state.chatHistory = [];
+        updateChatStatus("准备倾听...", "听着呢，今晚过得怎么样？");
+        
+        // 开启 60 分钟自动睡眠计时器
+        if(state.sleepTimer) clearTimeout(state.sleepTimer);
+        state.sleepTimer = setTimeout(() => {
+            triggerSleepTimeout();
+        }, state.maxChatDuration);
+
+        // 启动 STT
+        if (state.recognition) {
+            try {
+                state.recognition.start();
+                state.isListening = true;
+            } catch(e){}
+        }
+
+        // AI 探询开场白
+        setTimeout(() => {
+            let memoryContext = state.memory.length > 0 
+                ? `（提示：你记得用户之前："${state.memory[state.memory.length - 1].content}"）` 
+                : '';
+            speakAIResponse(`晚上好。忙完啦？${state.memory.length > 0 ? '今天感觉怎么样？' : '今晚有什么想聊聊的吗？'}`);
+        }, 1000);
+    }
+
+    async function handleUserInput(text) {
+        updateChatStatus("正在思考...", `“${text}”`);
+        state.chatHistory.push({ role: "user", content: text });
+
+        // 后台隐式评估：提取长期记忆
+        extractAndSaveMemory(text);
+
+        // API 或 本地逻辑生成回答
+        let aiReply = "";
+        if (state.apiKey) {
+            aiReply = await fetchOpenAIReply(text);
+        } else {
+            aiReply = generateFallbackReply(text);
+        }
+
+        state.chatHistory.push({ role: "assistant", content: aiReply });
+        speakAIResponse(aiReply);
+    }
+
+    // 本地拟人化回复逻辑 (未配置 API Key 时的 MVP 回复机制)
+    function generateFallbackReply(input) {
+        if (input.includes("累") || input.includes("工作") || input.includes("忙")) {
+            return "听起来今天真的消耗了你很多能量。快躺舒服点，发生什么事情了吗？";
+        } else if (input.includes("焦虑") || input.includes("烦") || input.includes("压力")) {
+            return "嗯，我在听着呢。很多事情压在心里确实不好受，想说多久都可以。";
+        } else if (input.includes("开心") || input.includes("成功") || input.includes("不错")) {
+            return "太好了，真为你高兴！快跟我说说具体的，我也想听听。";
+        }
+        return "懂了。有时候确实会这样……那后来呢，你自己是怎么想的？";
+    }
+
+    async function fetchOpenAIReply(userInput) {
+        try {
+            let memoryPrompt = state.memory.map(m => `- ${m.content}`).join("\n");
+            const response = await fetch("https://api.openai.com/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${state.apiKey}`
+                },
+                body: JSON.stringify({
+                    model: "gpt-4o-mini",
+                    messages: [
+                        { role: "system", content: `${SYSTEM_PROMPT}\n【关于用户的长期记忆】：\n${memoryPrompt}` },
+                        ...state.chatHistory
+                    ],
+                    max_tokens: 150
+                })
+            });
+            const data = await response.json();
+            return data.choices[0].message.content;
+        } catch(e) {
+            return "抱歉，刚刚网络打了个盹。不过我在听，你继续说。";
+        }
+    }
+
+    // --- 语音播放 (TTS) & 打断逻辑 ---
+    function speakAIResponse(text) {
+        updateChatStatus("晚安朋友回应中...", text);
+        state.isSpeaking = true;
+        document.getElementById('chat-avatar-glow').classList.add('speaking');
+        document.getElementById('avatar-icon').innerText = "💬";
+
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel(); // 停止先前的播放
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'zh-CN';
+            utterance.rate = 0.88; // 较慢语速，睡前放松
+            utterance.pitch = 0.95; 
+
+            utterance.onend = () => {
+                state.isSpeaking = false;
+                document.getElementById('chat-avatar-glow').classList.remove('speaking');
+                document.getElementById('avatar-icon').innerText = "✨";
+                updateChatStatus("倾听中...", "你可以随时开口讲话");
+            };
+
+            window.speechSynthesis.speak(utterance);
+        }
+    }
+
+    function stopTTS() {
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+        }
+        state.isSpeaking = false;
+        document.getElementById('chat-avatar-glow').classList.remove('speaking');
+        document.getElementById('avatar-icon').innerText = "✨";
+    }
+
+    function updateChatStatus(status, subtext) {
+        document.getElementById('chat-status').innerText = status;
+        document.getElementById('chat-substatus').innerText = subtext;
+    }
+
+    // --- 长期记忆抽取机制 ---
+    function extractAndSaveMemory(userInput) {
+        // MVP 中简单的规则提取（如提及工作、性格特征、长期烦恼）
+        if (userInput.length > 6) {
+            let memoryItem = {
+                type: "user_state",
+                content: `用户谈及：${userInput.slice(0, 20)}...`,
+                timestamp: new Date().toISOString()
+            };
+            state.memory.push(memoryItem);
+            if (state.memory.length > 10) state.memory.shift(); // 维持最新10条
+            localStorage.setItem('gnb_user_memory', JSON.stringify(state.memory));
+        }
+    }
+
+    // --- 结束对话与《今晚的心事》生成 ---
+    function finishChatSession() {
+        stopAudioProcesses();
+        switchView('view-summary');
+        generateNightlySummary();
+    }
+
+    function triggerSleepTimeout() {
+        speakAIResponse("你好像已经睡着了。那晚安咯，我帮你整理好了今晚的心事。");
+        setTimeout(() => {
+            finishChatSession();
+        }, 4000);
+    }
+
+    function stopAudioProcesses() {
+        stopTTS();
+        if (state.recognition && state.isListening) {
+            state.recognition.stop();
+            state.isListening = false;
+        }
+        if(state.sleepTimer) clearTimeout(state.sleepTimer);
+    }
+
+    function generateNightlySummary() {
+        // 根据对话历史自动提炼
+        let userTexts = state.chatHistory.filter(h => h.role === 'user').map(h => h.content).join("；");
+        
+        if (!userTexts) {
+            document.getElementById('summary-events').innerText = "今晚你安静地陪伴着，没有说太多话。";
+            document.getElementById('summary-focus').innerText = "静静地给自己留了一片宁静的夜空。";
+            document.getElementById('summary-reminder').innerText = "放空自己，好梦。";
+            return;
+        }
+
+        document.getElementById('summary-events').innerText = `今天你聊到了：${userTexts.slice(0, 45)}...`;
+        document.getElementById('summary-focus').innerText = "其实你在意的不只是事情本身，而是希望能把积攒的情绪表达出来，让努力被看见。";
+        document.getElementById('summary-reminder').innerText = "明天也不要忘记照顾好自己，累了就停下来深呼吸。晚安。";
+    }
+
+    // 启动应用
+    init();
+</script>
+</body>
+</html>
